@@ -1,56 +1,48 @@
 name: Build Sky ISO
 on:
-  workflow_dispatch: # הבנייה תתחיל רק בלחיצה ידנית שלך
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    container:
-      image: archlinux:latest
-      options: --privileged
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Fix Keys and Dependencies
+      - name: Build Sky ISO via Docker
         run: |
-          # הגדרה למניעת שגיאות מפתחות וסנכרון (Error 100)
-          pacman-key --init
-          pacman-key --populate archlinux
+          # יצירת סקריפט הבנייה בתוך המכונה
+          cat << 'EOF' > build_script.sh
           pacman -Sy --noconfirm archlinux-keyring
-          pacman -Syu --noconfirm archiso git curl
+          pacman -Syu --noconfirm archiso curl git
+          
+          cp -r /usr/share/archiso/configs/releng/ /tmp/sky_config
+          
+          # חבילות ודפדפן קל (Surf)
+          echo -e "surf\nfeh\nopenbox\nxorg-server\nxorg-xinit" >> /tmp/sky_config/packages.x86_64
+          
+          # מחיקת דרייברים מיותרים
+          sed -i '/xf86-video-/d' /tmp/sky_config/packages.x86_64
+          
+          # הגדרת הרקע והממשק
+          mkdir -p /tmp/sky_config/airootfs/usr/share/backgrounds
+          mkdir -p /tmp/sky_config/airootfs/etc/skel
+          curl -L "https://istockphoto.com" -o /tmp/sky_config/airootfs/usr/share/backgrounds/sky_bg.jpg
+          
+          echo "feh --bg-fill /usr/share/backgrounds/sky_bg.jpg &" > /tmp/sky_config/airootfs/etc/skel/.xinitrc
+          echo "exec openbox-session" >> /tmp/sky_config/airootfs/etc/skel/.xinitrc
+          chmod 755 /tmp/sky_config/airootfs/etc/skel/.xinitrc
+          
+          # הרצת הבנייה
+          mkarchiso -v -w /tmp/work_dir -o /tmp/out_dir /tmp/sky_config
+          EOF
 
-      - name: Setup Sky Configuration
-        run: |
-          # יצירת פרופיל המערכת
-          cp -r /usr/share/archiso/configs/releng/ sky_config
-          
-          # הוספת חבילות מינימליות (Surf הוא דפדפן קל במיוחד)
-          echo -e "surf\nfeh\nopenbox\nxorg-server\nxorg-xinit" >> sky_config/packages.x86_64
-          
-          # הסרת דרייברים מיותרים לחלוטין
-          sed -i '/xf86-video-/d' sky_config/packages.x86_64
-          
-          # יצירת תיקיות למניעת Error 1, 5, 123
-          mkdir -p sky_config/airootfs/usr/share/backgrounds
-          mkdir -p sky_config/airootfs/etc/skel
-          
-          # הורדת הרקע המדויק
-          curl -L "https://istockphoto.com" -o sky_config/airootfs/usr/share/backgrounds/sky_bg.jpg
-          
-          # הגדרת ממשק המשתמש
-          echo "feh --bg-fill /usr/share/backgrounds/sky_bg.jpg &" > sky_config/airootfs/etc/skel/.xinitrc
-          echo "exec openbox-session" >> sky_config/airootfs/etc/skel/.xinitrc
-          chmod 755 sky_config/airootfs/etc/skel/.xinitrc
-
-      - name: Build ISO
-        run: |
-          # מניעת שגיאות על ידי ניקוי תיקיות עבודה קודמות
-          rm -rf work_dir out_dir
-          mkarchiso -v -w work_dir -o out_dir sky_config
+          # הרצת הכל בתוך קונטיינר מורשה (Privileged) למניעת Error 1
+          docker run --privileged -v $(pwd):/workspace archlinux:latest /bin/bash /workspace/build_script.sh
 
       - name: Upload ISO
         uses: actions/upload-artifact@v4
         with:
           name: Sky-ISO
-          path: out_dir/*.iso
+          path: ./*.iso # הוא יחפש את הקובץ שיצרנו
+          if-no-files-found: warn
