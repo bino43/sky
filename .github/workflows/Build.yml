@@ -7,36 +7,41 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+      options: --privileged
     steps:
+      - name: Install system dependencies
+        run: pacman -Syu --noconfirm archiso git curl
+
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Build Sky OS
-        uses: arch-noob/archiso-action@v2
+      - name: Setup Sky Configuration
+        run: |
+          cp -r /usr/share/archiso/configs/releng/ sky_config
+          # הוספת החבילות שביקשת
+          echo -e "surf\nfeh\nopenbox\nxorg-server\nxorg-xinit" >> sky_config/packages.x86_64
+          
+          # הסרת דרייברים מיותרים
+          sed -i '/xf86-video-vesa/d' sky_config/packages.x86_64
+          
+          # הגדרת הרקע והמערכת
+          mkdir -p sky_config/airootfs/usr/share/backgrounds
+          mkdir -p sky_config/airootfs/etc/skel
+          
+          curl -L "https://istockphoto.com" -o sky_config/airootfs/usr/share/backgrounds/sky_bg.jpg
+          
+          echo "feh --bg-fill /usr/share/backgrounds/sky_bg.jpg &" > sky_config/airootfs/etc/skel/.xinitrc
+          echo "exec openbox-session" >> sky_config/airootfs/etc/skel/.xinitrc
+          chmod 755 sky_config/airootfs/etc/skel/.xinitrc
+
+      - name: Build ISO
+        run: |
+          mkarchiso -v -w work_dir -o out_dir sky_config
+
+      - name: Upload ISO
+        uses: actions/upload-artifact@v4
         with:
-          iso_name: sky
-          custom_script: |
-            pacman -Sy
-            # דפדפן surf קליל וממשק openbox
-            echo "surf" >> packages.x86_64
-            echo "feh" >> packages.x86_64
-            echo "openbox" >> packages.x86_64
-            echo "xorg-server" >> packages.x86_64
-            
-            # מחיקת דרייברים מיותרים לחיסכון במקום
-            sed -i '/xf86-video-vesa/d' packages.x86_64 2>/dev/null || true
-            sed -i '/xf86-video-amdgpu/d' packages.x86_64 2>/dev/null || true
-            
-            # יצירת מבנה המערכת ומניעת Errors 1, 5, 100, 123
-            mkdir -p airootfs/usr/share/backgrounds
-            mkdir -p airootfs/etc/skel
-            
-            # טעינת תמונת השקיעה המדויקת שביקשת
-            curl -L "https://istockphoto.com" -o airootfs/usr/share/backgrounds/sky_bg.jpg
-            
-            # הגדרת הרקע ב-Live
-            echo "feh --bg-fill /usr/share/backgrounds/sky_bg.jpg &" > airootfs/etc/skel/.xinitrc
-            echo "exec openbox-session" >> airootfs/etc/skel/.xinitrc
-            
-            chmod 755 airootfs/etc/skel/.xinitrc
-            rm -rf /var/cache/pacman/pkg/*
+          name: Sky-ISO
+          path: out_dir/*.iso
