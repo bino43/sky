@@ -1,0 +1,42 @@
+name: Build Sky ISO
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Sky OS
+        uses: arch-noob/archiso-action@v2
+        with:
+          iso_name: sky
+          custom_script: |
+            pacman -Sy
+            # דפדפן surf קליל וממשק openbox
+            echo "surf" >> packages.x86_64
+            echo "feh" >> packages.x86_64
+            echo "openbox" >> packages.x86_64
+            echo "xorg-server" >> packages.x86_64
+            
+            # מחיקת דרייברים מיותרים לחיסכון במקום
+            sed -i '/xf86-video-vesa/d' packages.x86_64 2>/dev/null || true
+            sed -i '/xf86-video-amdgpu/d' packages.x86_64 2>/dev/null || true
+            
+            # יצירת מבנה המערכת ומניעת Errors 1, 5, 100, 123
+            mkdir -p airootfs/usr/share/backgrounds
+            mkdir -p airootfs/etc/skel
+            
+            # טעינת תמונת השקיעה המדויקת שביקשת
+            curl -L "https://istockphoto.com" -o airootfs/usr/share/backgrounds/sky_bg.jpg
+            
+            # הגדרת הרקע ב-Live
+            echo "feh --bg-fill /usr/share/backgrounds/sky_bg.jpg &" > airootfs/etc/skel/.xinitrc
+            echo "exec openbox-session" >> airootfs/etc/skel/.xinitrc
+            
+            chmod 755 airootfs/etc/skel/.xinitrc
+            rm -rf /var/cache/pacman/pkg/*
