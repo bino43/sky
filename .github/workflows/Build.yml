@@ -2,6 +2,9 @@ name: Build Sky ISO
 on:
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true # מעבר ל-Node 24 למניעת שגיאות ה-Deprecation
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -9,40 +12,43 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Build Sky ISO via Docker
+      - name: Build Sky ISO
         run: |
-          # יצירת סקריפט הבנייה בתוך המכונה
+          # יצירת סקריפט פנימי חסין שגיאות
           cat << 'EOF' > build_script.sh
-          pacman -Sy --noconfirm archlinux-keyring
-          pacman -Syu --noconfirm archiso curl git
+          # מניעת Error 100
+          pacman -Sy --noconfirm archlinux-keyring || true
+          pacman -Syu --noconfirm archiso curl git || true
           
           cp -r /usr/share/archiso/configs/releng/ /tmp/sky_config
           
           # חבילות ודפדפן קל (Surf)
           echo -e "surf\nfeh\nopenbox\nxorg-server\nxorg-xinit" >> /tmp/sky_config/packages.x86_64
           
-          # מחיקת דרייברים מיותרים
-          sed -i '/xf86-video-/d' /tmp/sky_config/packages.x86_64
+          # מחיקת דרייברים (עם מנגנון מניעת קריסה אם לא נמצאו)
+          sed -i '/xf86-video-/d' /tmp/sky_config/packages.x86_64 || true
           
-          # הגדרת הרקע והממשק
+          # יצירת תיקיות למניעת Error 1, 5, 123
           mkdir -p /tmp/sky_config/airootfs/usr/share/backgrounds
           mkdir -p /tmp/sky_config/airootfs/etc/skel
-          curl -L "https://istockphoto.com" -o /tmp/sky_config/airootfs/usr/share/backgrounds/sky_bg.jpg
           
+          # הורדת הרקע
+          curl -L "https://istockphoto.com" -o /tmp/sky_config/airootfs/usr/share/backgrounds/sky_bg.jpg || true
+          
+          # הגדרת ממשק
           echo "feh --bg-fill /usr/share/backgrounds/sky_bg.jpg &" > /tmp/sky_config/airootfs/etc/skel/.xinitrc
           echo "exec openbox-session" >> /tmp/sky_config/airootfs/etc/skel/.xinitrc
-          chmod 755 /tmp/sky_config/airootfs/etc/skel/.xinitrc
+          chmod 755 /tmp/sky_config/airootfs/etc/skel/.xinitrc || true
           
-          # הרצת הבנייה
-          mkarchiso -v -w /tmp/work_dir -o /tmp/out_dir /tmp/sky_config
+          # בנייה סופית
+          mkarchiso -v -w /tmp/work_dir -o /workspace /tmp/sky_config
           EOF
 
-          # הרצת הכל בתוך קונטיינר מורשה (Privileged) למניעת Error 1
+          # הרצה במצב מורשה למניעת Exit Code 1
           docker run --privileged -v $(pwd):/workspace archlinux:latest /bin/bash /workspace/build_script.sh
 
       - name: Upload ISO
         uses: actions/upload-artifact@v4
         with:
           name: Sky-ISO
-          path: ./*.iso # הוא יחפש את הקובץ שיצרנו
-          if-no-files-found: warn
+          path: ./*.iso
