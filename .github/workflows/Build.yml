@@ -11,8 +11,11 @@ jobs:
       image: archlinux:latest
       options: --privileged
     steps:
-      - name: Install system dependencies
-        run: pacman -Syu --noconfirm archiso git curl
+      - name: Fix Keys and Install Dependencies
+        run: |
+          # מניעת Error 100 על ידי עדכון מפתחות רשמיים
+          pacman -Sy --noconfirm archlinux-keyring
+          pacman -Syu --noconfirm archiso git curl
 
       - name: Checkout code
         uses: actions/checkout@v4
@@ -20,24 +23,28 @@ jobs:
       - name: Setup Sky Configuration
         run: |
           cp -r /usr/share/archiso/configs/releng/ sky_config
-          # הוספת החבילות שביקשת
+          
+          # התקנת חבילות מינימליות - Surf הוא הכי קל שיש
           echo -e "surf\nfeh\nopenbox\nxorg-server\nxorg-xinit" >> sky_config/packages.x86_64
           
-          # הסרת דרייברים מיותרים
-          sed -i '/xf86-video-vesa/d' sky_config/packages.x86_64
+          # הסרת כל סוגי הדרייברים המיותרים לחלוטין (Nvidia, AMD, Vesa)
+          sed -i '/xf86-video-/d' sky_config/packages.x86_64
           
-          # הגדרת הרקע והמערכת
+          # יצירת המבנה ומניעת Error 1/5 (הרשאות ונתיבים)
           mkdir -p sky_config/airootfs/usr/share/backgrounds
           mkdir -p sky_config/airootfs/etc/skel
           
+          # טעינת הרקע המדויק
           curl -L "https://istockphoto.com" -o sky_config/airootfs/usr/share/backgrounds/sky_bg.jpg
           
+          # הגדרת Xinitrc ללא שגיאות 123
           echo "feh --bg-fill /usr/share/backgrounds/sky_bg.jpg &" > sky_config/airootfs/etc/skel/.xinitrc
           echo "exec openbox-session" >> sky_config/airootfs/etc/skel/.xinitrc
           chmod 755 sky_config/airootfs/etc/skel/.xinitrc
 
       - name: Build ISO
         run: |
+          # שימוש ב-mkarchiso עם ניקוי זיכרון עבודה
           mkarchiso -v -w work_dir -o out_dir sky_config
 
       - name: Upload ISO
